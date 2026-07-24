@@ -1,5 +1,5 @@
 ; ====================================================================
-; JS-DOS Bare-Metal Edition (Kernel v5.1.0 - Extended Version Control)
+; JS-DOS Bare-Metal Edition (Kernel v5.2.0 - Security & Desktop UI)
 ; Assemble: fasm DOS.ASM DOS.bin
 ; Run:      qemu-system-x86_64 -fda DOS.bin
 ; ====================================================================
@@ -93,6 +93,21 @@ main_loop:
     jc do_help
 
     mov si, input_buffer
+    mov di, cmd_setup
+    call strcmp
+    jc do_setup
+
+    mov si, input_buffer
+    mov di, cmd_login
+    call strcmp
+    jc do_login
+
+    mov si, input_buffer
+    mov di, cmd_desktop
+    call strcmp
+    jc do_desktop
+
+    mov si, input_buffer
     mov di, cmd_neofetch
     call strcmp
     jc do_neofetch
@@ -126,11 +141,6 @@ main_loop:
     mov di, cmd_dev
     call strcmp
     jc do_dev
-
-    mov si, input_buffer
-    mov di, cmd_desktop
-    call strcmp
-    jc do_desktop
 
     mov si, input_buffer
     mov di, cmd_jlver
@@ -230,6 +240,132 @@ do_help:
     call print_string
     jmp main_loop
 
+; --- SETUP COMMAND: PASSWORD CONFIGURATION ---
+do_setup:
+    mov ax, 0003h
+    int 10h
+    mov si, msg_setup_title
+    call print_string
+
+    ; Read Username
+    mov si, msg_setup_user_prompt
+    call print_string
+    mov di, user_buffer
+    call read_line
+    mov si, msg_newline
+    call print_string
+
+    ; Read Password
+    mov si, msg_setup_pass_prompt
+    call print_string
+    mov di, pass_buffer
+    call read_line
+    mov si, msg_newline
+    call print_string
+
+    mov byte [is_configured], 1
+    mov si, msg_setup_done
+    call print_string
+    jmp main_loop
+
+; --- LOGIN COMMAND: SECURITY CHECK ---
+do_login:
+    cmp byte [is_configured], 0
+    jne .configured
+    mov si, msg_not_configured
+    call print_string
+    jmp main_loop
+
+ .configured:
+    mov ax, 0003h
+    int 10h
+    mov si, msg_login_title
+    call print_string
+
+ login_retry:
+    mov si, msg_login_pass_prompt
+    call print_string
+    mov di, input_buffer
+    call read_line
+    mov si, msg_newline
+    call print_string
+
+    ; Verify Password
+    mov si, input_buffer
+    mov di, pass_buffer
+    call strcmp
+    jc .login_success
+
+    mov si, msg_login_fail
+    call print_string
+    jmp login_retry
+
+ .login_success:
+    mov si, msg_login_ok
+    call print_string
+    jmp main_loop
+
+; --- REDESIGNED DESKTOP UI ---
+do_desktop:
+    mov ax, 0003h
+    int 10h
+    mov si, msg_desktop_ui
+    call print_string
+
+ desktop_loop:
+    mov si, msg_desktop_prompt
+    call print_string
+
+    mov di, input_buffer
+    call read_line
+    mov si, msg_newline
+    call print_string
+
+    ; Check Exit
+    mov si, input_buffer
+    mov di, cmd_exit
+    call strcmp
+    jc .exit_desktop
+
+    mov si, input_buffer
+    mov di, cmd_opt1
+    call strcmp
+    jc .app_editor
+
+    mov si, input_buffer
+    mov di, cmd_opt2
+    call strcmp
+    jc .app_calc
+
+    mov si, input_buffer
+    mov di, cmd_opt3
+    call strcmp
+    jc .app_settings
+
+    mov si, msg_desktop_err
+    call print_string
+    jmp desktop_loop
+
+ .app_editor:
+    mov si, msg_app1_launched
+    call print_string
+    jmp desktop_loop
+
+ .app_calc:
+    mov si, msg_app2_launched
+    call print_string
+    jmp desktop_loop
+
+ .app_settings:
+    mov si, msg_app3_launched
+    call print_string
+    jmp desktop_loop
+
+ .exit_desktop:
+    mov ax, 0003h
+    int 10h
+    jmp main_loop
+
 do_neofetch:
     mov si, msg_neofetch_art
     call print_string
@@ -293,7 +429,6 @@ do_developers:
     call print_string
     jmp main_loop
 
-; --- UPDATE COMMAND WITH DYNAMIC VERSION CHECK & DOWNGRADE PROTECTION ---
 do_update:
     mov si, msg_checking_repo
     call print_string
@@ -304,15 +439,11 @@ do_update:
     mov si, msg_repo_ver_found
     call print_string
 
-    ; Dynamic Version Comparison
-    ; Reads binary version code in SYS_VERSION_CODE and compares against remote build (510)
     mov ax, [SYS_VERSION_CODE]
+    cmp ax, 520                 ; Compare local build against target build (520 = v5.2.0)
+    je .already_latest
+    jl .do_upgrade
 
-    cmp ax, 510                 ; Compare local build against target build (510 = v5.1.0)
-    je .already_latest          ; If equal -> already at latest build
-    jl .do_upgrade              ; If local build < 510 -> upgrade available!
-
-    ; Downgrade Protection Block
     mov si, msg_downgrade_err
     call print_string
     jmp main_loop
@@ -405,30 +536,6 @@ do_dev:
     call print_string
     jmp dev_editor_loop
  .exit_dev:
-    mov ax, 0003h
-    int 10h
-    jmp main_loop
-
-do_desktop:
-    mov ax, 0003h
-    int 10h
-    mov si, msg_desktop_ui
-    call print_string
- desktop_loop:
-    mov si, msg_desktop_prompt
-    call print_string
-    mov di, input_buffer
-    call read_line
-    mov si, msg_newline
-    call print_string
-    mov si, input_buffer
-    mov di, cmd_exit
-    call strcmp
-    jc .exit_desktop
-    mov si, msg_desktop_app
-    call print_string
-    jmp desktop_loop
- .exit_desktop:
     mov ax, 0003h
     int 10h
     jmp main_loop
@@ -607,12 +714,17 @@ strcmp:
 ; --------------------------------------------------------------------
 
 SYS_VERSION_MAJOR   db 5        ; Major integer
-SYS_VERSION_MINOR   db 1        ; Minor integer
-SYS_VERSION_CODE    dw 510      ; Numeric Build Code (510 = v5.1.0)
+SYS_VERSION_MINOR   db 2        ; Minor integer
+SYS_VERSION_CODE    dw 520      ; Numeric Build Code (520 = v5.2.0)
+
+is_configured       db 0        ; Setup status flag
 
 cmd_cls         db 'CLS', 0
 cmd_clear       db 'CLEAR', 0
 cmd_help        db 'HELP', 0
+cmd_setup       db 'SETUP', 0
+cmd_login       db 'LOGIN', 0
+cmd_desktop     db 'DESKTOP', 0
 cmd_neofetch    db 'NEOFETCH', 0
 cmd_info        db 'INFO', 0
 cmd_settings    db 'SETTINGS', 0
@@ -620,7 +732,6 @@ cmd_developers  db 'DEVELOPERS', 0
 cmd_recovery    db 'RECOVERY', 0
 cmd_update      db 'UPDATE', 0
 cmd_dev         db 'DEV', 0
-cmd_desktop     db 'DESKTOP', 0
 cmd_jlver       db 'JLVER', 0
 cmd_time        db 'TIME', 0
 cmd_date        db 'DATE', 0
@@ -643,22 +754,55 @@ cmd_opt1        db '1', 0
 cmd_opt2        db '2', 0
 cmd_opt3        db '3', 0
 
-msg_banner  db 'JS-DOS OS [Kernel v5.1.0 - Extended Build 510]', 0Dh, 0Ah
-            db 'Type HELP for commands, or UPDATE to verify system build status.', 0Dh, 0Ah, 0Dh, 0Ah, 0
+msg_banner  db 'JS-DOS OS [Kernel v5.2.0 - Extended Security Build]', 0Dh, 0Ah
+            db 'Type SETUP to configure credentials, or DESKTOP to launch UI.', 0Dh, 0Ah, 0Dh, 0Ah, 0
 msg_prompt  db 'C:\>', 0
 msg_newline db 0Dh, 0Ah, 0
 msg_badcmd  db 'Bad command or file name', 0Dh, 0Ah, 0
 
-msg_help    db 'Commands: CLS, HELP, NEOFETCH, INFO, SETTINGS, DEVELOPERS, RECOVERY,', 0Dh, 0Ah
-            db '          UPDATE, DEV, DESKTOP, JLVER, TIME, DATE, MEM, ECHO, PING,', 0Dh, 0Ah
-            db '          FETCH, CALC, COLOR, MATRIX, VER, CPUINFO, NETSTAT, BOOTLOG,', 0Dh, 0Ah
-            db '          POWEROFF, RESTART', 0Dh, 0Ah, 0
+msg_help    db 'Commands: CLS, HELP, SETUP, LOGIN, DESKTOP, NEOFETCH, INFO, SETTINGS,', 0Dh, 0Ah
+            db '          DEVELOPERS, RECOVERY, UPDATE, DEV, JLVER, TIME, DATE, MEM,', 0Dh, 0Ah
+            db '          ECHO, PING, FETCH, CALC, COLOR, MATRIX, VER, CPUINFO,', 0Dh, 0Ah
+            db '          NETSTAT, BOOTLOG, POWEROFF, RESTART', 0Dh, 0Ah, 0
+
+; SETUP & LOGIN MESSAGES
+msg_setup_title       db '================================================', 0Dh, 0Ah
+                      db '            JS-DOS ACCOUNT INITIALIZATION        ', 0Dh, 0Ah
+                      db '================================================', 0Dh, 0Ah, 0
+msg_setup_user_prompt db 'Enter New Username: ', 0
+msg_setup_pass_prompt db 'Enter New Password: ', 0
+msg_setup_done        db '[SETUP] Account credentials saved successfully.', 0Dh, 0Ah, 0
+
+msg_login_title       db '================================================', 0Dh, 0Ah
+                      db '              JS-DOS SECURITY LOGIN             ', 0Dh, 0Ah
+                      db '================================================', 0Dh, 0Ah, 0
+msg_login_pass_prompt db 'Enter Password: ', 0
+msg_login_fail        db '[ACCESS DENIED] Incorrect password! Try again.', 0Dh, 0Ah, 0
+msg_login_ok          db '[ACCESS GRANTED] Session unlocked.', 0Dh, 0Ah, 0
+msg_not_configured    db '[ERROR] No credentials set. Run SETUP command first.', 0Dh, 0Ah, 0
+
+; NEW DESKTOP ENVIRONMENT UI
+msg_desktop_ui  db '========================================================================', 0Dh, 0Ah
+                db '| JS-DOS WORKSTATION v5.2.0                    CLOCK: 12:00  RAM: 32KB |', 0Dh, 0Ah
+                db '========================================================================', 0Dh, 0Ah
+                db '| SHORTCUTS:                                                           |', 0Dh, 0Ah
+                db '|  [1] Live Text Editor (DEV)                                          |', 0Dh, 0Ah
+                db '|  [2] System Calculator (CALC)                                         |', 0Dh, 0Ah
+                db '|  [3] System Settings (SETTINGS)                                      |', 0Dh, 0Ah
+                db '|                                                                      |', 0Dh, 0Ah
+                db '| Enter choice (1-3) or type EXIT to close Desktop.                    |', 0Dh, 0Ah
+                db '========================================================================', 0Dh, 0Ah, 0
+msg_desktop_prompt db 'DESKTOP> ', 0
+msg_desktop_err    db 'Invalid shortcut option. Choose 1, 2, 3, or EXIT.', 0Dh, 0Ah, 0
+msg_app1_launched  db '[DESKTOP] Launching Live ASM Editor...', 0Dh, 0Ah, 0
+msg_app2_launched  db '[DESKTOP] Launching Math Utility...', 0Dh, 0Ah, 0
+msg_app3_launched  db '[DESKTOP] Launching Control Panel...', 0Dh, 0Ah, 0
 
 ; UPDATE ENGINE MESSAGES
 msg_checking_repo   db 'Connecting to GitHub origin/main repository...', 0Dh, 0Ah, 0
-msg_current_ver     db 'Installed Version: v5.1.0 [Build Code: 510]', 0Dh, 0Ah, 0
-msg_repo_ver_found  db 'Remote Version Found: v5.1.0 [Build Code: 510]', 0Dh, 0Ah, 0
-msg_no_update       db '[UPDATE] System is running the latest build (v5.1.0).', 0Dh, 0Ah, 0
+msg_current_ver     db 'Installed Version: v5.2.0 [Build Code: 520]', 0Dh, 0Ah, 0
+msg_repo_ver_found  db 'Remote Version Found: v5.2.0 [Build Code: 520]', 0Dh, 0Ah, 0
+msg_no_update       db '[UPDATE] System is running the latest build (v5.2.0).', 0Dh, 0Ah, 0
 msg_downgrade_err   db '[ERROR] Target build is older than installed system! Downgrade blocked.', 0Dh, 0Ah, 0
 msg_updating        db '[UPDATE] Code change detected! Flashing new build sectors...', 0Dh, 0Ah, 0
 
@@ -668,8 +812,8 @@ msg_neofetch_art db '   ______  _____       _______  ____ ', 0Dh, 0Ah
                  db ' / / /_/ /\__ \  --- / /_/ / / / /   ', 0Dh, 0Ah
                  db '/_/\____/____/      /_____/_/\__/    ', 0Dh, 0Ah
                  db '-------------------------------------', 0Dh, 0Ah
-                 db 'OS: JS-DOS Bare-Metal v5.1.0', 0Dh, 0Ah
-                 db 'Build Code: 510 | Target Arch: x86 16-Bit', 0Dh, 0Ah
+                 db 'OS: JS-DOS Bare-Metal v5.2.0', 0Dh, 0Ah
+                 db 'Build Code: 520 | Target Arch: x86 16-Bit', 0Dh, 0Ah
                  db 'Boot Base: 0x7C00 | Kernel Base: 0x8000', 0Dh, 0Ah
                  db 'Sectors Allocated: 64 Sectors (32 KB)', 0Dh, 0Ah, 0
 
@@ -709,16 +853,13 @@ msg_rec_mbr_ok      db '[RECOVERY] Sector 1 signature 0xAA55 verified.', 0Dh, 0A
 msg_rec_files_ok    db '[RECOVERY] Scanned 64 sectors: 0 bad sectors found.', 0Dh, 0Ah, 0
 msg_rec_git_ok      db '[RECOVERY] Clean build restored from GitHub origin.', 0Dh, 0Ah, 0
 
-; DEV & DESKTOP MESSAGES
+; DEV MESSAGES
 msg_dev_header   db '=== JS-DOS LIVE ASM EDITOR ===', 0Dh, 0Ah, 0
 msg_dev_prompt   db 'EDIT> ', 0
 msg_dev_saved    db '[RAM Buffer Updated]', 0Dh, 0Ah, 0
-msg_desktop_ui   db '=== JS-DOS DESKTOP ENV ===', 0Dh, 0Ah, 0
-msg_desktop_prompt db 'DESKTOP> ', 0
-msg_desktop_app  db 'App launched.', 0Dh, 0Ah, 0
 
 ; MISC MESSAGES
-msg_info_detail db 'System: JS-DOS Real-Mode Kernel v5.1.0 on x86 Architecture.', 0Dh, 0Ah, 0
+msg_info_detail db 'System: JS-DOS Real-Mode Kernel v5.2.0 on x86 Architecture.', 0Dh, 0Ah, 0
 msg_jlver_info  db 'JLVER Metrics: Boot 0x7C00 | Kernel 0x8000 (32KB)', 0Dh, 0Ah, 0
 msg_time        db 'System Clock: 12:00:00', 0Dh, 0Ah, 0
 msg_date        db 'System Calendar: 2026-07-24', 0Dh, 0Ah, 0
@@ -729,7 +870,7 @@ msg_fetch       db 'FETCH: Kernel source synced with origin/main.', 0Dh, 0Ah, 0
 msg_calc        db 'CALC: 2 + 2 = 4', 0Dh, 0Ah, 0
 msg_color       db 'COLOR: VGA Mode 03h (80x25 Text Mode)', 0Dh, 0Ah, 0
 msg_matrix      db 'MATRIX: [0101010101010101]', 0Dh, 0Ah, 0
-msg_ver         db 'Version: JS-DOS v5.1.0 Extended Build 510', 0Dh, 0Ah, 0
+msg_ver         db 'Version: JS-DOS v5.2.0 Extended Security Build', 0Dh, 0Ah, 0
 msg_cpuinfo     db 'CPU: x86 Compatible Processor (Real Mode)', 0Dh, 0Ah, 0
 msg_netstat     db 'NETSTAT: Interface eth0 UP | Local: 10.0.2.15', 0Dh, 0Ah, 0
 msg_bootlog     db 'BOOTLOG: Stage 1 loaded at 0x7C00 -> Stage 2 at 0x8000 [OK]', 0Dh, 0Ah, 0
@@ -737,6 +878,8 @@ msg_poweroff    db 'Powering off VM...', 0Dh, 0Ah, 0
 msg_restart     db 'Rebooting...', 0Dh, 0Ah, 0
 
 input_buffer db 32 dup(0)
+user_buffer  db 32 dup(0)
+pass_buffer  db 32 dup(0)
 
 ; Pad Stage 2 Kernel to exactly 32768 bytes (64 sectors)
 times 32768-($-kernel_start) db 0

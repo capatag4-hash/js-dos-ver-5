@@ -1,10 +1,10 @@
 ; ====================================================================
-;  Quick OS / Kernel - Version 6.0.0
+;  Quick OS / Kernel - Version 6.0.0 (FASM Edition)
 ;  Build Code: 600
 ; ====================================================================
 
-[BITS 16]
-[ORG 0x7C00]
+use16
+org 0x7C00
 
 start:
     ; Set up segment registers and stack
@@ -117,7 +117,7 @@ do_cls:
     jmp main_loop
 
 ; --------------------------------------------------------------------
-; QIINSTALL COMMAND - Destructive Disk Wipe & Hard Drive Install
+; QIINSTALL COMMAND - Hard Drive Partition & Kernel Flasher
 ; --------------------------------------------------------------------
 do_qiinstall:
     mov si, msg_install_warn
@@ -447,9 +447,11 @@ cmd_cpuinfo         db 'CPUINFO', 0
 cmd_cls             db 'CLS', 0
 
 ; Zero-filled 512-byte buffer for wiping sectors
-zero_buffer:        times 512 db 0
+zero_buffer:        db 512 dup (0)
 
-; Input Buffer & MBR Padding
-input_buffer:       times 64 db 0
-times 510-($-$$)    db 0
+; Input Buffer
+input_buffer:       db 64 dup (0)
+
+; Boot Sector Padding & Magic Signature (FASM syntax)
+db 510 - ($ - $$) dup (0)
 dw 0xAA55

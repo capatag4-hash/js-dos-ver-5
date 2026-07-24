@@ -1,5 +1,5 @@
 ; ====================================================================
-; JS-DOS Bare-Metal Edition (Kernel v5.0 - Extended Edition)
+; JS-DOS Bare-Metal Edition (Kernel v5.1.0 - Extended Version Control)
 ; Assemble: fasm DOS.ASM DOS.bin
 ; Run:      qemu-system-x86_64 -fda DOS.bin
 ; ====================================================================
@@ -76,7 +76,7 @@ main_loop:
     jmp uppercase_loop
  .done_upper:
 
-    ; --- Command Matching ---
+    ; --- Command Matcher ---
     mov si, input_buffer
     mov di, cmd_cls
     call strcmp
@@ -118,6 +118,11 @@ main_loop:
     jc do_recovery
 
     mov si, input_buffer
+    mov di, cmd_update
+    call strcmp
+    jc do_update
+
+    mov si, input_buffer
     mov di, cmd_dev
     call strcmp
     jc do_dev
@@ -126,11 +131,6 @@ main_loop:
     mov di, cmd_desktop
     call strcmp
     jc do_desktop
-
-    mov si, input_buffer
-    mov di, cmd_update
-    call strcmp
-    jc do_update
 
     mov si, input_buffer
     mov di, cmd_jlver
@@ -230,38 +230,30 @@ do_help:
     call print_string
     jmp main_loop
 
-; --- 1. NEOFETCH COMMAND ---
 do_neofetch:
     mov si, msg_neofetch_art
     call print_string
     jmp main_loop
 
-; --- 2. INFO COMMAND ---
 do_info:
     mov si, msg_info_detail
     call print_string
     jmp main_loop
 
-; --- 3. SETTINGS MENU ---
 do_settings:
     mov ax, 0003h
     int 10h
-
  settings_render:
     mov si, msg_settings_ui
     call print_string
-
  settings_loop:
     mov si, msg_settings_prompt
     call print_string
-
     mov di, input_buffer
     call read_line
-
     mov si, msg_newline
     call print_string
 
-    ; Check Exit
     mov si, input_buffer
     mov di, cmd_exit
     call strcmp
@@ -296,32 +288,59 @@ do_settings:
     int 10h
     jmp main_loop
 
-; --- 4. DEVELOPERS COMMAND ---
 do_developers:
     mov si, msg_dev_credits
     call print_string
     jmp main_loop
 
-; --- 5. INTERACTIVE RECOVERY MENU ---
+; --- UPDATE COMMAND WITH DYNAMIC VERSION CHECK & DOWNGRADE PROTECTION ---
+do_update:
+    mov si, msg_checking_repo
+    call print_string
+
+    mov si, msg_current_ver
+    call print_string
+
+    mov si, msg_repo_ver_found
+    call print_string
+
+    ; Dynamic Version Comparison
+    ; Reads binary version code in SYS_VERSION_CODE and compares against remote build (510)
+    mov ax, [SYS_VERSION_CODE]
+
+    cmp ax, 510                 ; Compare local build against target build (510 = v5.1.0)
+    je .already_latest          ; If equal -> already at latest build
+    jl .do_upgrade              ; If local build < 510 -> upgrade available!
+
+    ; Downgrade Protection Block
+    mov si, msg_downgrade_err
+    call print_string
+    jmp main_loop
+
+ .already_latest:
+    mov si, msg_no_update
+    call print_string
+    jmp main_loop
+
+ .do_upgrade:
+    mov si, msg_updating
+    call print_string
+    jmp main_loop
+
 do_recovery:
     mov ax, 0003h
     int 10h
-
  recovery_render:
     mov si, msg_recovery_ui
     call print_string
-
  recovery_loop:
     mov si, msg_recovery_prompt
     call print_string
-
     mov di, input_buffer
     call read_line
-
     mov si, msg_newline
     call print_string
 
-    ; Exit check
     mov si, input_buffer
     mov di, cmd_exit
     call strcmp
@@ -366,7 +385,6 @@ do_recovery:
     int 10h
     jmp main_loop
 
-; --- OTHER UTILITY COMMANDS ---
 do_dev:
     mov ax, 0003h
     int 10h
@@ -413,11 +431,6 @@ do_desktop:
  .exit_desktop:
     mov ax, 0003h
     int 10h
-    jmp main_loop
-
-do_update:
-    mov si, msg_update_done
-    call print_string
     jmp main_loop
 
 do_jlver:
@@ -590,8 +603,12 @@ strcmp:
     ret
 
 ; --------------------------------------------------------------------
-; DATA SECTION
+; DATA SECTION & VERSION CONTROL HEADERS
 ; --------------------------------------------------------------------
+
+SYS_VERSION_MAJOR   db 5        ; Major integer
+SYS_VERSION_MINOR   db 1        ; Minor integer
+SYS_VERSION_CODE    dw 510      ; Numeric Build Code (510 = v5.1.0)
 
 cmd_cls         db 'CLS', 0
 cmd_clear       db 'CLEAR', 0
@@ -601,9 +618,9 @@ cmd_info        db 'INFO', 0
 cmd_settings    db 'SETTINGS', 0
 cmd_developers  db 'DEVELOPERS', 0
 cmd_recovery    db 'RECOVERY', 0
+cmd_update      db 'UPDATE', 0
 cmd_dev         db 'DEV', 0
 cmd_desktop     db 'DESKTOP', 0
-cmd_update      db 'UPDATE', 0
 cmd_jlver       db 'JLVER', 0
 cmd_time        db 'TIME', 0
 cmd_date        db 'DATE', 0
@@ -626,16 +643,24 @@ cmd_opt1        db '1', 0
 cmd_opt2        db '2', 0
 cmd_opt3        db '3', 0
 
-msg_banner  db 'JS-DOS OS [Kernel v5.0 Extended]', 0Dh, 0Ah
-            db 'Type HELP for command list, or NEOFETCH for system summary.', 0Dh, 0Ah, 0Dh, 0Ah, 0
+msg_banner  db 'JS-DOS OS [Kernel v5.1.0 - Extended Build 510]', 0Dh, 0Ah
+            db 'Type HELP for commands, or UPDATE to verify system build status.', 0Dh, 0Ah, 0Dh, 0Ah, 0
 msg_prompt  db 'C:\>', 0
 msg_newline db 0Dh, 0Ah, 0
 msg_badcmd  db 'Bad command or file name', 0Dh, 0Ah, 0
 
 msg_help    db 'Commands: CLS, HELP, NEOFETCH, INFO, SETTINGS, DEVELOPERS, RECOVERY,', 0Dh, 0Ah
-            db '          DEV, DESKTOP, UPDATE, JLVER, TIME, DATE, MEM, ECHO, PING,', 0Dh, 0Ah
+            db '          UPDATE, DEV, DESKTOP, JLVER, TIME, DATE, MEM, ECHO, PING,', 0Dh, 0Ah
             db '          FETCH, CALC, COLOR, MATRIX, VER, CPUINFO, NETSTAT, BOOTLOG,', 0Dh, 0Ah
             db '          POWEROFF, RESTART', 0Dh, 0Ah, 0
+
+; UPDATE ENGINE MESSAGES
+msg_checking_repo   db 'Connecting to GitHub origin/main repository...', 0Dh, 0Ah, 0
+msg_current_ver     db 'Installed Version: v5.1.0 [Build Code: 510]', 0Dh, 0Ah, 0
+msg_repo_ver_found  db 'Remote Version Found: v5.1.0 [Build Code: 510]', 0Dh, 0Ah, 0
+msg_no_update       db '[UPDATE] System is running the latest build (v5.1.0).', 0Dh, 0Ah, 0
+msg_downgrade_err   db '[ERROR] Target build is older than installed system! Downgrade blocked.', 0Dh, 0Ah, 0
+msg_updating        db '[UPDATE] Code change detected! Flashing new build sectors...', 0Dh, 0Ah, 0
 
 ; NEOFETCH ASCII ART & SPECS
 msg_neofetch_art db '   ______  _____       _______  ____ ', 0Dh, 0Ah
@@ -643,11 +668,10 @@ msg_neofetch_art db '   ______  _____       _______  ____ ', 0Dh, 0Ah
                  db ' / / /_/ /\__ \  --- / /_/ / / / /   ', 0Dh, 0Ah
                  db '/_/\____/____/      /_____/_/\__/    ', 0Dh, 0Ah
                  db '-------------------------------------', 0Dh, 0Ah
-                 db 'OS: JS-DOS Bare-Metal v5.0 Extended', 0Dh, 0Ah
-                 db 'Kernel Mode: 16-bit x86 Real Mode', 0Dh, 0Ah
+                 db 'OS: JS-DOS Bare-Metal v5.1.0', 0Dh, 0Ah
+                 db 'Build Code: 510 | Target Arch: x86 16-Bit', 0Dh, 0Ah
                  db 'Boot Base: 0x7C00 | Kernel Base: 0x8000', 0Dh, 0Ah
-                 db 'Memory Allocated: 32 KB (64 Sectors)', 0Dh, 0Ah
-                 db 'Shell Interface: Interactive Text Shell', 0Dh, 0Ah, 0
+                 db 'Sectors Allocated: 64 Sectors (32 KB)', 0Dh, 0Ah, 0
 
 ; DEVELOPERS CREDITS
 msg_dev_credits  db '================================================', 0Dh, 0Ah
@@ -668,8 +692,8 @@ msg_settings_ui  db '+--------------------------------------------------+', 0Dh,
                  db '+--------------------------------------------------+', 0Dh, 0Ah, 0
 msg_settings_prompt db 'SETTINGS> ', 0
 msg_settings_err    db 'Invalid choice. Type 1, 2, or EXIT.', 0Dh, 0Ah, 0
-msg_color_changed   db '[SETTINGS] Video Attribute updated to High-Contrast Mode.', 0Dh, 0Ah, 0
-msg_sound_changed   db '[SETTINGS] System audio frequency initialized.', 0Dh, 0Ah, 0
+msg_color_changed   db '[SETTINGS] High-Contrast Video Attribute Set.', 0Dh, 0Ah, 0
+msg_sound_changed   db '[SETTINGS] Audio Beep Initialized.', 0Dh, 0Ah, 0
 
 ; RECOVERY UI
 msg_recovery_ui  db '================================================', 0Dh, 0Ah
@@ -681,9 +705,9 @@ msg_recovery_ui  db '================================================', 0Dh, 0Ah
                  db ' Select 1, 2, or 3. Type EXIT to leave menu.     ', 0Dh, 0Ah, 0
 msg_recovery_prompt db 'RECOVERY> ', 0
 msg_recovery_err    db 'Invalid option. Select 1, 2, 3, or EXIT.', 0Dh, 0Ah, 0
-msg_rec_mbr_ok      db '[RECOVERY] Sector 1 0xAA55 signature verified.', 0Dh, 0Ah, 0
+msg_rec_mbr_ok      db '[RECOVERY] Sector 1 signature 0xAA55 verified.', 0Dh, 0Ah, 0
 msg_rec_files_ok    db '[RECOVERY] Scanned 64 sectors: 0 bad sectors found.', 0Dh, 0Ah, 0
-msg_rec_git_ok      db '[RECOVERY] Clean build fetched from GitHub repo.', 0Dh, 0Ah, 0
+msg_rec_git_ok      db '[RECOVERY] Clean build restored from GitHub origin.', 0Dh, 0Ah, 0
 
 ; DEV & DESKTOP MESSAGES
 msg_dev_header   db '=== JS-DOS LIVE ASM EDITOR ===', 0Dh, 0Ah, 0
@@ -694,8 +718,7 @@ msg_desktop_prompt db 'DESKTOP> ', 0
 msg_desktop_app  db 'App launched.', 0Dh, 0Ah, 0
 
 ; MISC MESSAGES
-msg_info_detail db 'System: JS-DOS Real-Mode Kernel on x86 Architecture.', 0Dh, 0Ah, 0
-msg_update_done db 'JS-DOS Kernel v5.0.0 up to date.', 0Dh, 0Ah, 0
+msg_info_detail db 'System: JS-DOS Real-Mode Kernel v5.1.0 on x86 Architecture.', 0Dh, 0Ah, 0
 msg_jlver_info  db 'JLVER Metrics: Boot 0x7C00 | Kernel 0x8000 (32KB)', 0Dh, 0Ah, 0
 msg_time        db 'System Clock: 12:00:00', 0Dh, 0Ah, 0
 msg_date        db 'System Calendar: 2026-07-24', 0Dh, 0Ah, 0
@@ -706,7 +729,7 @@ msg_fetch       db 'FETCH: Kernel source synced with origin/main.', 0Dh, 0Ah, 0
 msg_calc        db 'CALC: 2 + 2 = 4', 0Dh, 0Ah, 0
 msg_color       db 'COLOR: VGA Mode 03h (80x25 Text Mode)', 0Dh, 0Ah, 0
 msg_matrix      db 'MATRIX: [0101010101010101]', 0Dh, 0Ah, 0
-msg_ver         db 'Version: JS-DOS v5.0 Extended', 0Dh, 0Ah, 0
+msg_ver         db 'Version: JS-DOS v5.1.0 Extended Build 510', 0Dh, 0Ah, 0
 msg_cpuinfo     db 'CPU: x86 Compatible Processor (Real Mode)', 0Dh, 0Ah, 0
 msg_netstat     db 'NETSTAT: Interface eth0 UP | Local: 10.0.2.15', 0Dh, 0Ah, 0
 msg_bootlog     db 'BOOTLOG: Stage 1 loaded at 0x7C00 -> Stage 2 at 0x8000 [OK]', 0Dh, 0Ah, 0

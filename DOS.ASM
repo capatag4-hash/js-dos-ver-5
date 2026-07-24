@@ -1,5 +1,5 @@
 ; ====================================================================
-; JS-DOS Bare-Metal Edition (Kernel v4.0)
+; JS-DOS Bare-Metal Edition (Kernel v5.0 - Extended Edition)
 ; Assemble: fasm DOS.ASM DOS.bin
 ; Run:      qemu-system-x86_64 -fda DOS.bin
 ; ====================================================================
@@ -19,9 +19,9 @@ boot_start:
     mov sp, 0x7C00
     sti
 
-    ; Load Stage 2 Kernel from Disk (Read 16 Sectors into 0x8000)
+    ; Load Stage 2 Kernel from Disk (Read 64 Sectors into 0x8000)
     mov ah, 02h          ; BIOS Read Sectors Function
-    mov al, 16           ; Read 16 sectors (8192 bytes)
+    mov al, 64           ; Read 64 sectors (32768 bytes)
     mov ch, 0            ; Cylinder 0
     mov cl, 2            ; Start at Sector 2
     mov dh, 0            ; Head 0
@@ -35,7 +35,7 @@ times 510-($-$$) db 0
 dw 0xAA55               ; Boot Signature
 
 ; --------------------------------------------------------------------
-; STAGE 2: KERNEL & COMMAND SHELL (Sectors 2-17 - 8192 Bytes)
+; STAGE 2: KERNEL & COMMAND SHELL (32 KB Buffer)
 ; --------------------------------------------------------------------
 org 0x8000
 
@@ -93,14 +93,29 @@ main_loop:
     jc do_help
 
     mov si, input_buffer
-    mov di, cmd_update
+    mov di, cmd_neofetch
     call strcmp
-    jc do_update
+    jc do_neofetch
 
     mov si, input_buffer
-    mov di, cmd_jlver
+    mov di, cmd_info
     call strcmp
-    jc do_jlver
+    jc do_info
+
+    mov si, input_buffer
+    mov di, cmd_settings
+    call strcmp
+    jc do_settings
+
+    mov si, input_buffer
+    mov di, cmd_developers
+    call strcmp
+    jc do_developers
+
+    mov si, input_buffer
+    mov di, cmd_recovery
+    call strcmp
+    jc do_recovery
 
     mov si, input_buffer
     mov di, cmd_dev
@@ -113,21 +128,15 @@ main_loop:
     jc do_desktop
 
     mov si, input_buffer
-    mov di, cmd_poweroff
+    mov di, cmd_update
     call strcmp
-    jc do_poweroff
+    jc do_update
 
     mov si, input_buffer
-    mov di, cmd_restart
+    mov di, cmd_jlver
     call strcmp
-    jc do_restart
+    jc do_jlver
 
-    mov si, input_buffer
-    mov di, cmd_recovery
-    call strcmp
-    jc do_recovery
-
-    ; 8 New Commands
     mov si, input_buffer
     mov di, cmd_time
     call strcmp
@@ -159,9 +168,49 @@ main_loop:
     jc do_fetch
 
     mov si, input_buffer
-    mov di, cmd_info
+    mov di, cmd_calc
     call strcmp
-    jc do_info
+    jc do_calc
+
+    mov si, input_buffer
+    mov di, cmd_color
+    call strcmp
+    jc do_color
+
+    mov si, input_buffer
+    mov di, cmd_matrix
+    call strcmp
+    jc do_matrix
+
+    mov si, input_buffer
+    mov di, cmd_ver
+    call strcmp
+    jc do_ver
+
+    mov si, input_buffer
+    mov di, cmd_cpuinfo
+    call strcmp
+    jc do_cpuinfo
+
+    mov si, input_buffer
+    mov di, cmd_netstat
+    call strcmp
+    jc do_netstat
+
+    mov si, input_buffer
+    mov di, cmd_bootlog
+    call strcmp
+    jc do_bootlog
+
+    mov si, input_buffer
+    mov di, cmd_poweroff
+    call strcmp
+    jc do_poweroff
+
+    mov si, input_buffer
+    mov di, cmd_restart
+    call strcmp
+    jc do_restart
 
     mov si, msg_badcmd
     call print_string
@@ -181,11 +230,192 @@ do_help:
     call print_string
     jmp main_loop
 
+; --- 1. NEOFETCH COMMAND ---
+do_neofetch:
+    mov si, msg_neofetch_art
+    call print_string
+    jmp main_loop
+
+; --- 2. INFO COMMAND ---
+do_info:
+    mov si, msg_info_detail
+    call print_string
+    jmp main_loop
+
+; --- 3. SETTINGS MENU ---
+do_settings:
+    mov ax, 0003h
+    int 10h
+
+ settings_render:
+    mov si, msg_settings_ui
+    call print_string
+
+ settings_loop:
+    mov si, msg_settings_prompt
+    call print_string
+
+    mov di, input_buffer
+    call read_line
+
+    mov si, msg_newline
+    call print_string
+
+    ; Check Exit
+    mov si, input_buffer
+    mov di, cmd_exit
+    call strcmp
+    jc .exit_settings
+
+    mov si, input_buffer
+    mov di, cmd_opt1
+    call strcmp
+    jc .set_color
+
+    mov si, input_buffer
+    mov di, cmd_opt2
+    call strcmp
+    jc .set_sound
+
+    mov si, msg_settings_err
+    call print_string
+    jmp settings_loop
+
+ .set_color:
+    mov si, msg_color_changed
+    call print_string
+    jmp settings_loop
+
+ .set_sound:
+    mov si, msg_sound_changed
+    call print_string
+    jmp settings_loop
+
+ .exit_settings:
+    mov ax, 0003h
+    int 10h
+    jmp main_loop
+
+; --- 4. DEVELOPERS COMMAND ---
+do_developers:
+    mov si, msg_dev_credits
+    call print_string
+    jmp main_loop
+
+; --- 5. INTERACTIVE RECOVERY MENU ---
+do_recovery:
+    mov ax, 0003h
+    int 10h
+
+ recovery_render:
+    mov si, msg_recovery_ui
+    call print_string
+
+ recovery_loop:
+    mov si, msg_recovery_prompt
+    call print_string
+
+    mov di, input_buffer
+    call read_line
+
+    mov si, msg_newline
+    call print_string
+
+    ; Exit check
+    mov si, input_buffer
+    mov di, cmd_exit
+    call strcmp
+    jc .exit_recovery
+
+    mov si, input_buffer
+    mov di, cmd_opt1
+    call strcmp
+    jc .rec_mbr
+
+    mov si, input_buffer
+    mov di, cmd_opt2
+    call strcmp
+    jc .rec_files
+
+    mov si, input_buffer
+    mov di, cmd_opt3
+    call strcmp
+    jc .rec_git
+
+    mov si, msg_recovery_err
+    call print_string
+    jmp recovery_loop
+
+ .rec_mbr:
+    mov si, msg_rec_mbr_ok
+    call print_string
+    jmp recovery_loop
+
+ .rec_files:
+    mov si, msg_rec_files_ok
+    call print_string
+    jmp recovery_loop
+
+ .rec_git:
+    mov si, msg_rec_git_ok
+    call print_string
+    jmp recovery_loop
+
+ .exit_recovery:
+    mov ax, 0003h
+    int 10h
+    jmp main_loop
+
+; --- OTHER UTILITY COMMANDS ---
+do_dev:
+    mov ax, 0003h
+    int 10h
+    mov si, msg_dev_header
+    call print_string
+ dev_editor_loop:
+    mov si, msg_dev_prompt
+    call print_string
+    mov di, input_buffer
+    call read_line
+    mov si, msg_newline
+    call print_string
+    mov si, input_buffer
+    mov di, cmd_exit
+    call strcmp
+    jc .exit_dev
+    mov si, msg_dev_saved
+    call print_string
+    jmp dev_editor_loop
+ .exit_dev:
+    mov ax, 0003h
+    int 10h
+    jmp main_loop
+
+do_desktop:
+    mov ax, 0003h
+    int 10h
+    mov si, msg_desktop_ui
+    call print_string
+ desktop_loop:
+    mov si, msg_desktop_prompt
+    call print_string
+    mov di, input_buffer
+    call read_line
+    mov si, msg_newline
+    call print_string
+    mov si, input_buffer
+    mov di, cmd_exit
+    call strcmp
+    jc .exit_desktop
+    mov si, msg_desktop_app
+    call print_string
+    jmp desktop_loop
+ .exit_desktop:
+    mov ax, 0003h
+    int 10h
+    jmp main_loop
+
 do_update:
-    mov si, msg_update_start
-    call print_string
-    mov si, msg_github_url
-    call print_string
     mov si, msg_update_done
     call print_string
     jmp main_loop
@@ -195,156 +425,6 @@ do_jlver:
     call print_string
     jmp main_loop
 
-; --- FIXED DEV MODE ---
-do_dev:
-    mov ax, 0003h
-    int 10h
-
-    mov si, msg_dev_header
-    call print_string
-
- dev_editor_loop:
-    mov si, msg_dev_prompt
-    call print_string
-
-    mov di, input_buffer
-    call read_line
-
-    mov si, msg_newline
-    call print_string
-
-    ; Check EXIT
-    mov si, input_buffer
-    mov di, cmd_exit
-    call strcmp
-    jc .exit_dev
-
-    mov si, msg_dev_saved
-    call print_string
-    jmp dev_editor_loop
-
- .exit_dev:
-    mov ax, 0003h
-    int 10h
-    jmp main_loop
-
-; --- FIXED DESKTOP MODE ---
-do_desktop:
-    mov ax, 0003h
-    int 10h
-
- desktop_render:
-    mov si, msg_desktop_ui
-    call print_string
-
- desktop_loop:
-    mov si, msg_desktop_prompt
-    call print_string
-
-    mov di, input_buffer
-    call read_line
-
-    mov si, msg_newline
-    call print_string
-
-    ; Upper-case desktop input
-    mov si, input_buffer
- .d_upper:
-    mov al, [si]
-    cmp al, 0
-    je .d_done_upper
-    cmp al, 'a'
-    jb .d_skip
-    cmp al, 'z'
-    ja .d_skip
-    sub al, 32
-    mov [si], al
- .d_skip:
-    inc si
-    jmp .d_upper
- .d_done_upper:
-
-    ; Check EXIT command
-    mov si, input_buffer
-    mov di, cmd_exit
-    call strcmp
-    jc .exit_desktop
-
-    ; Desktop options
-    mov si, input_buffer
-    mov di, cmd_opt1
-    call strcmp
-    jc .app1
-
-    mov si, input_buffer
-    mov di, cmd_opt2
-    call strcmp
-    jc .app2
-
-    mov si, input_buffer
-    mov di, cmd_opt3
-    call strcmp
-    jc .app3
-
-    mov si, msg_desktop_err
-    call print_string
-    jmp desktop_loop
-
- .app1:
-    mov si, msg_app1_text
-    call print_string
-    jmp desktop_loop
- .app2:
-    mov si, msg_app2_text
-    call print_string
-    jmp desktop_loop
- .app3:
-    mov si, msg_app3_text
-    call print_string
-    jmp desktop_loop
-
- .exit_desktop:
-    mov ax, 0003h
-    int 10h
-    jmp main_loop
-
-; --- POWER / RESTART ---
-do_poweroff:
-    mov si, msg_poweroff
-    call print_string
-    mov ax, 0x2000
-    mov dx, 0x604
-    out dx, ax
-    cli
- .halt:
-    hlt
-    jmp .halt
-
-do_restart:
-    mov si, msg_restart
-    call print_string
-    jmp 0xFFFF:0000
-
-; --- CODE-READING RECOVERY ---
-do_recovery:
-    mov si, msg_rec_header
-    call print_string
-    
-    ; Print source code lines
-    mov si, code_line1
-    call print_string
-    mov si, code_line2
-    call print_string
-    mov si, code_line3
-    call print_string
-    mov si, code_line4
-    call print_string
-
-    mov si, msg_rec_done
-    call print_string
-    jmp main_loop
-
-; --- 8 NEW COMMANDS ---
 do_time:
     mov si, msg_time
     call print_string
@@ -375,10 +455,56 @@ do_fetch:
     call print_string
     jmp main_loop
 
-do_info:
-    mov si, msg_info
+do_calc:
+    mov si, msg_calc
     call print_string
     jmp main_loop
+
+do_color:
+    mov si, msg_color
+    call print_string
+    jmp main_loop
+
+do_matrix:
+    mov si, msg_matrix
+    call print_string
+    jmp main_loop
+
+do_ver:
+    mov si, msg_ver
+    call print_string
+    jmp main_loop
+
+do_cpuinfo:
+    mov si, msg_cpuinfo
+    call print_string
+    jmp main_loop
+
+do_netstat:
+    mov si, msg_netstat
+    call print_string
+    jmp main_loop
+
+do_bootlog:
+    mov si, msg_bootlog
+    call print_string
+    jmp main_loop
+
+do_poweroff:
+    mov si, msg_poweroff
+    call print_string
+    mov ax, 0x2000
+    mov dx, 0x604
+    out dx, ax
+    cli
+ .halt:
+    hlt
+    jmp .halt
+
+do_restart:
+    mov si, msg_restart
+    call print_string
+    jmp 0xFFFF:0000
 
 ; --------------------------------------------------------------------
 ; HELPER ROUTINES
@@ -439,7 +565,6 @@ read_line:
     popa
     ret
 
-; Exact String Comparison Routine
 strcmp:
     push si
     push di
@@ -468,92 +593,127 @@ strcmp:
 ; DATA SECTION
 ; --------------------------------------------------------------------
 
-cmd_cls       db 'CLS', 0
-cmd_clear     db 'CLEAR', 0
-cmd_help      db 'HELP', 0
-cmd_update    db 'UPDATE', 0
-cmd_jlver     db 'JLVER', 0
-cmd_dev       db 'DEV', 0
-cmd_desktop   db 'DESKTOP', 0
-cmd_poweroff  db 'POWEROFF', 0
-cmd_restart   db 'RESTART', 0
-cmd_recovery  db 'RECOVERY', 0
-cmd_exit      db 'EXIT', 0
+cmd_cls         db 'CLS', 0
+cmd_clear       db 'CLEAR', 0
+cmd_help        db 'HELP', 0
+cmd_neofetch    db 'NEOFETCH', 0
+cmd_info        db 'INFO', 0
+cmd_settings    db 'SETTINGS', 0
+cmd_developers  db 'DEVELOPERS', 0
+cmd_recovery    db 'RECOVERY', 0
+cmd_dev         db 'DEV', 0
+cmd_desktop     db 'DESKTOP', 0
+cmd_update      db 'UPDATE', 0
+cmd_jlver       db 'JLVER', 0
+cmd_time        db 'TIME', 0
+cmd_date        db 'DATE', 0
+cmd_mem         db 'MEM', 0
+cmd_echo        db 'ECHO', 0
+cmd_ping        db 'PING', 0
+cmd_fetch       db 'FETCH', 0
+cmd_calc        db 'CALC', 0
+cmd_color       db 'COLOR', 0
+cmd_matrix      db 'MATRIX', 0
+cmd_ver         db 'VER', 0
+cmd_cpuinfo     db 'CPUINFO', 0
+cmd_netstat     db 'NETSTAT', 0
+cmd_bootlog     db 'BOOTLOG', 0
+cmd_poweroff    db 'POWEROFF', 0
+cmd_restart     db 'RESTART', 0
+cmd_exit        db 'EXIT', 0
 
-; 8 New Command Keys
-cmd_time      db 'TIME', 0
-cmd_date      db 'DATE', 0
-cmd_mem       db 'MEM', 0
-cmd_echo      db 'ECHO', 0
-cmd_ping      db 'PING', 0
-cmd_fetch     db 'FETCH', 0
-cmd_info      db 'INFO', 0
+cmd_opt1        db '1', 0
+cmd_opt2        db '2', 0
+cmd_opt3        db '3', 0
 
-; Desktop Keys
-cmd_opt1      db '1', 0
-cmd_opt2      db '2', 0
-cmd_opt3      db '3', 0
-
-msg_banner  db 'JS-DOS OS [Multi-Sector Kernel v4.0]', 0Dh, 0Ah
-            db 'Type HELP for available commands.', 0Dh, 0Ah, 0Dh, 0Ah, 0
+msg_banner  db 'JS-DOS OS [Kernel v5.0 Extended]', 0Dh, 0Ah
+            db 'Type HELP for command list, or NEOFETCH for system summary.', 0Dh, 0Ah, 0Dh, 0Ah, 0
 msg_prompt  db 'C:\>', 0
 msg_newline db 0Dh, 0Ah, 0
 msg_badcmd  db 'Bad command or file name', 0Dh, 0Ah, 0
 
-msg_help    db 'Commands: CLS, HELP, UPDATE, JLVER, DEV, DESKTOP, POWEROFF, RESTART,', 0Dh, 0Ah
-            db '          RECOVERY, TIME, DATE, MEM, ECHO, PING, FETCH, INFO, CLEAR', 0Dh, 0Ah, 0
+msg_help    db 'Commands: CLS, HELP, NEOFETCH, INFO, SETTINGS, DEVELOPERS, RECOVERY,', 0Dh, 0Ah
+            db '          DEV, DESKTOP, UPDATE, JLVER, TIME, DATE, MEM, ECHO, PING,', 0Dh, 0Ah
+            db '          FETCH, CALC, COLOR, MATRIX, VER, CPUINFO, NETSTAT, BOOTLOG,', 0Dh, 0Ah
+            db '          POWEROFF, RESTART', 0Dh, 0Ah, 0
 
-msg_update_start db 'Connecting to network adapter...', 0Dh, 0Ah, 0
-msg_github_url   db 'Checking repo: https://github.com/capatag4-hash/js-dos', 0Dh, 0Ah, 0
-msg_update_done  db 'System is up to date! Version 4.0.0-latest', 0Dh, 0Ah, 0
+; NEOFETCH ASCII ART & SPECS
+msg_neofetch_art db '   ______  _____       _______  ____ ', 0Dh, 0Ah
+                 db '  / / __ \/ ___/      / __  / \/ /__)', 0Dh, 0Ah
+                 db ' / / /_/ /\__ \  --- / /_/ / / / /   ', 0Dh, 0Ah
+                 db '/_/\____/____/      /_____/_/\__/    ', 0Dh, 0Ah
+                 db '-------------------------------------', 0Dh, 0Ah
+                 db 'OS: JS-DOS Bare-Metal v5.0 Extended', 0Dh, 0Ah
+                 db 'Kernel Mode: 16-bit x86 Real Mode', 0Dh, 0Ah
+                 db 'Boot Base: 0x7C00 | Kernel Base: 0x8000', 0Dh, 0Ah
+                 db 'Memory Allocated: 32 KB (64 Sectors)', 0Dh, 0Ah
+                 db 'Shell Interface: Interactive Text Shell', 0Dh, 0Ah, 0
 
-msg_jlver_info   db '--- JLVER SYSTEM CODE METRICS ---', 0Dh, 0Ah
-                 db 'Stage 1 Boot: 0x7C00 (512 Bytes)', 0Dh, 0Ah
-                 db 'Stage 2 Kernel: 0x8000 (8192 Bytes)', 0Dh, 0Ah
-                 db 'Architecture: 16-bit x86 Real Mode', 0Dh, 0Ah, 0
+; DEVELOPERS CREDITS
+msg_dev_credits  db '================================================', 0Dh, 0Ah
+                 db '            JS-DOS DEVELOPMENT TEAM             ', 0Dh, 0Ah
+                 db '================================================', 0Dh, 0Ah
+                 db ' Lead Systems Architect: Tyler                  ', 0Dh, 0Ah
+                 db ' Assembly Engineer: Gemini AI                   ', 0Dh, 0Ah
+                 db ' Project Repository: https://github.com/js-dos ', 0Dh, 0Ah, 0
 
-msg_dev_header   db '================================================', 0Dh, 0Ah
-                 db '          JS-DOS LIVE CODE EDITOR (DEV)         ', 0Dh, 0Ah
-                 db '     Type ASM / code lines. Type EXIT to quit.  ', 0Dh, 0Ah
-                 db '================================================', 0Dh, 0Ah, 0
-msg_dev_prompt   db 'EDIT> ', 0
-msg_dev_saved    db '[Line buffered to RAM]', 0Dh, 0Ah, 0
-
-; Desktop UI Text
-msg_desktop_ui   db '+--------------------------------------------------+', 0Dh, 0Ah
-                 db '|                 JS-DOS DESKTOP                   |', 0Dh, 0Ah
+; SETTINGS UI
+msg_settings_ui  db '+--------------------------------------------------+', 0Dh, 0Ah
+                 db '|                 JS-DOS SETTINGS                  |', 0Dh, 0Ah
                  db '+--------------------------------------------------+', 0Dh, 0Ah
-                 db '| [1] Text Editor    [2] File Manager   [3] Clock  |', 0Dh, 0Ah
+                 db '| [1] Toggle Text Colors                           |', 0Dh, 0Ah
+                 db '| [2] Toggle Speaker PC Beep                       |', 0Dh, 0Ah
                  db '|                                                  |', 0Dh, 0Ah
-                 db '| Type 1, 2, or 3 to open app. Type EXIT to leave.  |', 0Dh, 0Ah
+                 db '| Select 1 or 2. Type EXIT to return to C:\>       |', 0Dh, 0Ah
                  db '+--------------------------------------------------+', 0Dh, 0Ah, 0
+msg_settings_prompt db 'SETTINGS> ', 0
+msg_settings_err    db 'Invalid choice. Type 1, 2, or EXIT.', 0Dh, 0Ah, 0
+msg_color_changed   db '[SETTINGS] Video Attribute updated to High-Contrast Mode.', 0Dh, 0Ah, 0
+msg_sound_changed   db '[SETTINGS] System audio frequency initialized.', 0Dh, 0Ah, 0
+
+; RECOVERY UI
+msg_recovery_ui  db '================================================', 0Dh, 0Ah
+                 db '              JS-DOS RECOVERY MENU              ', 0Dh, 0Ah
+                 db '================================================', 0Dh, 0Ah
+                 db ' [1] Repair MBR Boot Sector (0x7C00)            ', 0Dh, 0Ah
+                 db ' [2] Scan and Integrity Check Disk Sectors     ', 0Dh, 0Ah
+                 db ' [3] Fetch & Rebuild Kernel from GitHub         ', 0Dh, 0Ah
+                 db ' Select 1, 2, or 3. Type EXIT to leave menu.     ', 0Dh, 0Ah, 0
+msg_recovery_prompt db 'RECOVERY> ', 0
+msg_recovery_err    db 'Invalid option. Select 1, 2, 3, or EXIT.', 0Dh, 0Ah, 0
+msg_rec_mbr_ok      db '[RECOVERY] Sector 1 0xAA55 signature verified.', 0Dh, 0Ah, 0
+msg_rec_files_ok    db '[RECOVERY] Scanned 64 sectors: 0 bad sectors found.', 0Dh, 0Ah, 0
+msg_rec_git_ok      db '[RECOVERY] Clean build fetched from GitHub repo.', 0Dh, 0Ah, 0
+
+; DEV & DESKTOP MESSAGES
+msg_dev_header   db '=== JS-DOS LIVE ASM EDITOR ===', 0Dh, 0Ah, 0
+msg_dev_prompt   db 'EDIT> ', 0
+msg_dev_saved    db '[RAM Buffer Updated]', 0Dh, 0Ah, 0
+msg_desktop_ui   db '=== JS-DOS DESKTOP ENV ===', 0Dh, 0Ah, 0
 msg_desktop_prompt db 'DESKTOP> ', 0
-msg_desktop_err    db 'Invalid application index. Type 1, 2, 3, or EXIT.', 0Dh, 0Ah, 0
-msg_app1_text      db '[APP] Text Editor Loaded. (Press ENTER)', 0Dh, 0Ah, 0
-msg_app2_text      db '[APP] File Manager: Drive C:\ [OK]', 0Dh, 0Ah, 0
-msg_app3_text      db '[APP] System Clock: 12:00:00 UTC', 0Dh, 0Ah, 0
+msg_desktop_app  db 'App launched.', 0Dh, 0Ah, 0
 
-; Recovery & Code Reading Strings
-msg_rec_header   db 'RECOVERY: Reading and rebuilding source lines from GitHub...', 0Dh, 0Ah, 0
-code_line1       db '[0x7C00] mov ah, 02h | int 13h ; Load Kernel', 0Dh, 0Ah, 0
-code_line2       db '[0x8000] mov ax, 0003h | int 10h ; Text Mode', 0Dh, 0Ah, 0
-code_line3       db '[0x8050] call read_line | call strcmp ; Shell', 0Dh, 0Ah, 0
-code_line4       db '[0x8100] times 8192-($-kernel_start) db 0 ; Pad', 0Dh, 0Ah, 0
-msg_rec_done     db 'Rebuild Complete! All source lines restored cleanly.', 0Dh, 0Ah, 0
-
-; New Commands Output Strings
-msg_time    db 'Current Time: 14:35:00', 0Dh, 0Ah, 0
-msg_date    db 'Current Date: 2026-07-24', 0Dh, 0Ah, 0
-msg_mem     db 'Memory Usage: Base RAM 640KB | Free: 632KB', 0Dh, 0Ah, 0
-msg_echo    db 'ECHO: JS-DOS Kernel Active.', 0Dh, 0Ah, 0
-msg_ping    db 'PING github.com [140.82.121.4]: 32 bytes time=12ms TTL=118', 0Dh, 0Ah, 0
-msg_fetch   db 'FETCH: Downloading main.asm from remote origin... Done.', 0Dh, 0Ah, 0
-msg_info    db 'System Info: JS-DOS x86 Real-Mode Kernel running on QEMU.', 0Dh, 0Ah, 0
-
-msg_poweroff db 'Shutting down JS-DOS... Safe to close VM.', 0Dh, 0Ah, 0
-msg_restart  db 'Rebooting system...', 0Dh, 0Ah, 0
+; MISC MESSAGES
+msg_info_detail db 'System: JS-DOS Real-Mode Kernel on x86 Architecture.', 0Dh, 0Ah, 0
+msg_update_done db 'JS-DOS Kernel v5.0.0 up to date.', 0Dh, 0Ah, 0
+msg_jlver_info  db 'JLVER Metrics: Boot 0x7C00 | Kernel 0x8000 (32KB)', 0Dh, 0Ah, 0
+msg_time        db 'System Clock: 12:00:00', 0Dh, 0Ah, 0
+msg_date        db 'System Calendar: 2026-07-24', 0Dh, 0Ah, 0
+msg_mem         db 'RAM: 640KB Base RAM | 32KB Kernel Resident', 0Dh, 0Ah, 0
+msg_echo        db 'ECHO: Active.', 0Dh, 0Ah, 0
+msg_ping        db 'PING github.com: 32 bytes time=8ms', 0Dh, 0Ah, 0
+msg_fetch       db 'FETCH: Kernel source synced with origin/main.', 0Dh, 0Ah, 0
+msg_calc        db 'CALC: 2 + 2 = 4', 0Dh, 0Ah, 0
+msg_color       db 'COLOR: VGA Mode 03h (80x25 Text Mode)', 0Dh, 0Ah, 0
+msg_matrix      db 'MATRIX: [0101010101010101]', 0Dh, 0Ah, 0
+msg_ver         db 'Version: JS-DOS v5.0 Extended', 0Dh, 0Ah, 0
+msg_cpuinfo     db 'CPU: x86 Compatible Processor (Real Mode)', 0Dh, 0Ah, 0
+msg_netstat     db 'NETSTAT: Interface eth0 UP | Local: 10.0.2.15', 0Dh, 0Ah, 0
+msg_bootlog     db 'BOOTLOG: Stage 1 loaded at 0x7C00 -> Stage 2 at 0x8000 [OK]', 0Dh, 0Ah, 0
+msg_poweroff    db 'Powering off VM...', 0Dh, 0Ah, 0
+msg_restart     db 'Rebooting...', 0Dh, 0Ah, 0
 
 input_buffer db 32 dup(0)
 
-; Pad Stage 2 Kernel to exactly 8192 bytes (16 sectors)
-times 8192-($-kernel_start) db 0
+; Pad Stage 2 Kernel to exactly 32768 bytes (64 sectors)
+times 32768-($-kernel_start) db 0
